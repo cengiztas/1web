@@ -9,7 +9,6 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	// "github.com/go-chi/chi"
-	//"github.com/jordan-wright/unindexed"
 	"golang.org/x/net/html"
 )
 
@@ -63,6 +62,7 @@ var whitelistedTags = map[atom.Atom]struct{}{
 	atom.S:          struct{}{},
 	atom.Strong:     struct{}{},
 	atom.U:          struct{}{},
+	atom.Link:       struct{}{},
 }
 
 var whitelistedAttrs = map[string]struct{}{
@@ -86,6 +86,27 @@ func (WebOneMatcher) Match(node *html.Node) bool {
 
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
+	// attr := map[string]string{"link": "href='/css/styles.min.css'"} // , "rel"="stylesheet', type='text/css'}
+
+	// fmt.Printf("New Node: %q\n", newNode.DataAtom)
+
+	// switch node.Type {
+	// case html.ElementNode:
+	// 	fmt.Printf("Element Node: %q\n", node.DataAtom)
+	// case html.CommentNode:
+	// 	fmt.Printf("Comment Node: %q\n", node.DataAtom)
+	// case html.DoctypeNode:
+	// 	fmt.Printf("Doctype Node: %q\n", node.DataAtom)
+	// case html.TextNode:
+	// 	fmt.Printf("Text Node: %q - %q\n", node.DataAtom, node.Data)
+	// case html.ErrorNode:
+	// 	fmt.Printf("Error Node: %q\n", node.DataAtom)
+	// case html.DocumentNode:
+	// 	fmt.Printf("Document Node: %q\n", node.DataAtom)
+	// default:
+	// 	fmt.Printf("Unknown Node: %q\n", node.Data)
+
+	// }
 
 	if node.Type != html.ElementNode {
 		// It's not an HTML tag.
@@ -93,6 +114,13 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	} else if !isWhitelistedNode(node) {
 		// It's not a whitelisted tag. Delete it.
 		matches = append(matches, node)
+
+	} else if node.Type == html.CommentNode {
+		// this does not work
+		matches = append(matches, node)
+		// this works
+		node.Parent.RemoveChild(node)
+
 	} else {
 		// Its a whitelisted tag. Dig deeper.
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
@@ -106,6 +134,11 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 				node.Attr = node.Attr[:last]   // then slice off the last attribute
 				i--
 			}
+		}
+
+		if node.DataAtom == atom.Head {
+			appendLinkNode(node)
+			appendMetaNode(node)
 		}
 	}
 
@@ -126,9 +159,58 @@ func isWhitelistedAttr(attr string) bool {
 	return whitelisted
 }
 
-func index(w http.ResponseWriter, r *http.Request) {
-	htmlStr := "welcome."
-	w.Write([]byte(htmlStr))
+func appendLinkNode(node *html.Node) {
+	attrs := []html.Attribute{
+		html.Attribute{
+			Key: "href",
+			Val: "/css/styles.min.css",
+		},
+		html.Attribute{
+			Key: "rel",
+			Val: "stylesheet",
+		},
+		html.Attribute{
+			Key: "type",
+			Val: "text/css",
+		},
+	}
+
+	newNode := html.Node{
+		Type:     html.ElementNode,
+		DataAtom: atom.Link,
+		Data:     "link",
+		Attr:     attrs,
+	}
+
+	node.AppendChild(&newNode)
+
+}
+
+func appendMetaNode(node *html.Node) {
+	attrs := []html.Attribute{
+		html.Attribute{
+			Key: "name",
+			Val: "viewport",
+		},
+		html.Attribute{
+			Key: "content",
+			Val: "'width=device-width, initial-scale=1.0'",
+		},
+		html.Attribute{
+			Key: "initial-scale",
+			Val: "1.0",
+		},
+	}
+
+	newNode := html.Node{
+		Type:     html.ElementNode,
+		DataAtom: atom.Meta,
+		Data:     "meta",
+		Attr:     attrs,
+	}
+
+	node.AppendChild(&newNode)
+
 }
 
 func purify(w http.ResponseWriter, r *http.Request) {
@@ -146,16 +228,13 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		query = "http://" + query
 	}
 
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	// client := &http.Client{
+	// 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	// 		return http.ErrUseLastResponse
+	// 	},
+	// }
 
-	resp, err := client.Get(query)
-
-	fmt.Println("StatusCode		:", resp.StatusCode)
-	fmt.Println("Redirect URL	:", resp.Header.Get("Location"))
+	// resp, err := client.Get(query)
 
 	// req, err := http.NewRequest("GET", query, nil)
 	// req.Header.Add("If-None-Match", `W/"wyzzy"`)
@@ -164,6 +243,8 @@ func purify(w http.ResponseWriter, r *http.Request) {
 	// Request the HTML page.
 	res, err := http.Get(query)
 	if err != nil {
+		fmt.Println("StatusCode		:", res.StatusCode)
+		fmt.Println("Redirect URL	:", res.Header.Get("Location"))
 		w.WriteHeader(500)
 		w.Write([]byte(err.Error()))
 		return
