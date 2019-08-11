@@ -70,6 +70,8 @@ var whitelistedAttrs = map[string]struct{}{
 	"colspan": struct{}{},
 }
 
+var u *url.URL
+
 func main() {
 	http.HandleFunc("/search", purify)
 	http.Handle("/", http.FileServer(http.Dir(".")))
@@ -86,47 +88,42 @@ func (WebOneMatcher) Match(node *html.Node) bool {
 
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
-	// attr := map[string]string{"link": "href='/css/styles.min.css'"} // , "rel"="stylesheet', type='text/css'}
 
-	// fmt.Printf("New Node: %q\n", newNode.DataAtom)
-
-	// switch node.Type {
-	// case html.ElementNode:
-	// 	fmt.Printf("Element Node: %q\n", node.DataAtom)
-	// case html.CommentNode:
-	// 	fmt.Printf("Comment Node: %q\n", node.DataAtom)
-	// case html.DoctypeNode:
-	// 	fmt.Printf("Doctype Node: %q\n", node.DataAtom)
-	// case html.TextNode:
-	// 	fmt.Printf("Text Node: %q - %q\n", node.DataAtom, node.Data)
-	// case html.ErrorNode:
-	// 	fmt.Printf("Error Node: %q\n", node.DataAtom)
-	// case html.DocumentNode:
-	// 	fmt.Printf("Document Node: %q\n", node.DataAtom)
-	// default:
-	// 	fmt.Printf("Unknown Node: %q\n", node.Data)
-
-	// }
-
-	if node.Type != html.ElementNode {
-		// It's not an HTML tag.
-		return []*html.Node{}
-	} else if !isWhitelistedNode(node) {
+	if !isWhitelistedNode(node) {
 		// It's not a whitelisted tag. Delete it.
 		matches = append(matches, node)
+	}
 
-	} else if node.Type == html.CommentNode {
-		// this does not work
-		matches = append(matches, node)
-		// this works
-		node.Parent.RemoveChild(node)
+	switch node.Type {
+	case html.ElementNode:
+		if node.FirstChild == nil {
+			// It is an empty node. Delete it.
+			// fmt.Printf("empty node: %s\n", node.Data)
+			matches = append(matches, node)
+		}
 
-	} else {
-		// Its a whitelisted tag. Dig deeper.
+		// If relative path, join url with host name.
+		if node.DataAtom == atom.A {
+			href, err := url.Parse(node.Attr[0].Val)
+			if err != nil {
+				panic(err)
+			}
+
+			base, err := url.Parse(u.String())
+			if err != nil {
+				panic(err)
+			}
+
+			node.Attr[0].Val = "?query=" + base.ResolveReference(href).String()
+			// fmt.Println(node.Attr[0].Val)
+		}
+
+		// It is a whitelisted tag. Dig deeper.
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
 			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
 		}
 
+		// TODO: It should be faster to delete all attributes at once if array does not contain whitelisted attribute.
 		for i := 0; i < len(node.Attr); i++ {
 			if !isWhitelistedAttr(node.Attr[i].Key) {
 				last := len(node.Attr) - 1
@@ -140,6 +137,22 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 			appendLinkNode(node)
 			appendMetaNode(node)
 		}
+		// fmt.Printf("Element Node: %q\n", node.Data)
+	case html.TextNode:
+		// fmt.Printf("Text Node: %q\n", node.Data)
+		return []*html.Node{}
+	case html.CommentNode:
+		fmt.Printf("Comment node found: %q\n", node.Data)
+		matches = append(matches, node)
+	case html.DoctypeNode:
+		fmt.Printf("Doctype node found: %q\n", node.Data)
+	case html.ErrorNode:
+		fmt.Printf("Error node found: %q\n", node.Data)
+	case html.DocumentNode:
+		fmt.Printf("Document node found: %q\n", node.Data)
+	default:
+		fmt.Printf("Unknown node found: %q\n", node.Data)
+
 	}
 
 	return matches
@@ -215,9 +228,10 @@ func appendMetaNode(node *html.Node) {
 
 func purify(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("query")
-	fmt.Println("QUERY	: <", query, ">")
 
-	u, err := url.Parse(query)
+	var err error
+
+	u, err = url.Parse(query)
 	if err != nil {
 		panic(err)
 	}
@@ -225,7 +239,7 @@ func purify(w http.ResponseWriter, r *http.Request) {
 	s := u.Scheme
 
 	if s == "" {
-		query = "http://" + query
+		u.Scheme = "http"
 	}
 
 	// client := &http.Client{
@@ -241,7 +255,8 @@ func purify(w http.ResponseWriter, r *http.Request) {
 	// resp, err := client.Do(req)
 
 	// Request the HTML page.
-	res, err := http.Get(query)
+	res, err := http.Get(u.String())
+	//res, err := http.Get(query)
 	if err != nil {
 		fmt.Println("StatusCode		:", res.StatusCode)
 		fmt.Println("Redirect URL	:", res.Header.Get("Location"))
