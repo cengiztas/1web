@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-
-	"golang.org/x/net/html/atom"
+	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	// "github.com/go-chi/chi"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 var whitelistedTags = map[atom.Atom]struct{}{
@@ -62,12 +62,17 @@ var whitelistedTags = map[atom.Atom]struct{}{
 	atom.S:          struct{}{},
 	atom.Strong:     struct{}{},
 	atom.U:          struct{}{},
+	atom.Main:       struct{}{},
 	atom.Link:       struct{}{},
 }
 
 var whitelistedAttrs = map[string]struct{}{
 	"href":    struct{}{},
 	"colspan": struct{}{},
+}
+
+var whitelistedEmptyTags = map[atom.Atom]struct{}{
+	atom.Td: struct{}{},
 }
 
 var u *url.URL
@@ -96,26 +101,8 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 
 	switch node.Type {
 	case html.ElementNode:
-		if node.FirstChild == nil {
-			// It is an empty node. Delete it.
-			// fmt.Printf("empty node: %s\n", node.Data)
+		if isEmptyNode(node) && !isWhitelistedEmptyNode(node) {
 			matches = append(matches, node)
-		}
-
-		// If relative path, join url with host name.
-		if node.DataAtom == atom.A {
-			href, err := url.Parse(node.Attr[0].Val)
-			if err != nil {
-				panic(err)
-			}
-
-			base, err := url.Parse(u.String())
-			if err != nil {
-				panic(err)
-			}
-
-			node.Attr[0].Val = "?query=" + base.ResolveReference(href).String()
-			// fmt.Println(node.Attr[0].Val)
 		}
 
 		// It is a whitelisted tag. Dig deeper.
@@ -133,14 +120,15 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 			}
 		}
 
-		if node.DataAtom == atom.Head {
-			appendLinkNode(node)
-			appendMetaNode(node)
-		}
-		// fmt.Printf("Element Node: %q\n", node.Data)
 	case html.TextNode:
-		// fmt.Printf("Text Node: %q\n", node.Data)
-		return []*html.Node{}
+		node.Data = strings.TrimSpace(node.Data)
+		if node.Data == "" {
+			// matches = append(matches, node)
+		} else {
+
+			return []*html.Node{}
+		}
+
 	case html.CommentNode:
 		fmt.Printf("Comment node found: %q\n", node.Data)
 		matches = append(matches, node)
@@ -152,6 +140,7 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 		fmt.Printf("Document node found: %q\n", node.Data)
 	default:
 		fmt.Printf("Unknown node found: %q\n", node.Data)
+		return []*html.Node{}
 
 	}
 
@@ -167,62 +156,40 @@ func isWhitelistedNode(node *html.Node) bool {
 	return whitelisted
 }
 
+func isWhitelistedEmptyNode(node *html.Node) bool {
+	_, whitelisted := whitelistedEmptyTags[node.DataAtom]
+	return whitelisted
+}
+
+func isEmptyNode(node *html.Node) bool {
+	return node.FirstChild == nil
+}
+
 func isWhitelistedAttr(attr string) bool {
 	_, whitelisted := whitelistedAttrs[attr]
 	return whitelisted
 }
 
-func appendLinkNode(node *html.Node) {
-	attrs := []html.Attribute{
-		html.Attribute{
-			Key: "href",
-			Val: "/css/styles.min.css",
-		},
-		html.Attribute{
-			Key: "rel",
-			Val: "stylesheet",
-		},
-		html.Attribute{
-			Key: "type",
-			Val: "text/css",
-		},
-	}
+func updateAHref(sel *goquery.Selection) *goquery.Selection {
+	sel.Each(func(i int, item *goquery.Selection) {
 
-	newNode := html.Node{
-		Type:     html.ElementNode,
-		DataAtom: atom.Link,
-		Data:     "link",
-		Attr:     attrs,
-	}
+		// If relative path, join url with host name.
+		ahref, _ := item.Attr("href")
 
-	node.AppendChild(&newNode)
+		href, err := url.Parse(ahref)
+		if err != nil {
+			panic(err)
+		}
 
-}
+		base, err := url.Parse(u.String())
+		if err != nil {
+			panic(err)
+		}
 
-func appendMetaNode(node *html.Node) {
-	attrs := []html.Attribute{
-		html.Attribute{
-			Key: "name",
-			Val: "viewport",
-		},
-		html.Attribute{
-			Key: "content",
-			Val: "'width=device-width, initial-scale=1.0'",
-		},
-		html.Attribute{
-			Key: "initial-scale",
-			Val: "1.0",
-		},
-	}
+		item.SetAttr("href", ("?query=" + base.ResolveReference(href).String()))
+	})
 
-	newNode := html.Node{
-		Type:     html.ElementNode,
-		DataAtom: atom.Meta,
-		Data:     "meta",
-		Attr:     attrs,
-	}
-
-	node.AppendChild(&newNode)
+	return sel
 
 }
 
@@ -242,45 +209,63 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		u.Scheme = "http"
 	}
 
-	// client := &http.Client{
-	// 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-	// 		return http.ErrUseLastResponse
-	// 	},
-	// }
-
 	// resp, err := client.Get(query)
 
-	// req, err := http.NewRequest("GET", query, nil)
-	// req.Header.Add("If-None-Match", `W/"wyzzy"`)
-	// resp, err := client.Do(req)
+	client := &http.Client{}
+	client.Timeout = time.Second * 15
 
-	// Request the HTML page.
-	res, err := http.Get(u.String())
-	//res, err := http.Get(query)
+	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		fmt.Println("StatusCode		:", res.StatusCode)
-		fmt.Println("Redirect URL	:", res.Header.Get("Location"))
 		w.WriteHeader(500)
 		w.Write([]byte(err.Error()))
 		return
 	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+
+	resp, err := client.Do(req)
+	fmt.Printf("Status %q\n", resp.Status)
+	if err != nil {
+		fmt.Println("StatusCode		:", resp.StatusCode)
+		fmt.Println("Redirect URL	:", resp.Header.Get("Location"))
 		w.WriteHeader(500)
-		w.Write([]byte(fmt.Sprint("Status code is", res.StatusCode, res.Status)))
+		w.Write([]byte(err.Error()))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		w.WriteHeader(500)
+		w.Write([]byte(fmt.Sprint(resp.Status)))
 		return
 	}
 
 	// Load the HTML document
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
 		w.WriteHeader(500)
 		w.Write([]byte(err.Error()))
 		return
 	}
 
+	// doc.Find("*").Each(func(i int, node *goquery.Selection) {
+	// 	// fmt.Printf("node: %q\n", goquery.NodeName(node))
+	// 	if _, whitelisted := whitelistedTags[atom.Lookup([]byte(goquery.NodeName(node)))]; !whitelisted {
+	// 		node.Remove()
+	// 		// fmt.Printf("Removing node: %q\n", node.Text())
+	// 	} else {
+	// 	}
+
+	// })
+
 	// purify
 	doc.FindMatcher(WebOneMatcher{}).Remove()
+
+	selection := doc.Find("a")
+	updateAHref(selection)
+
+	doc.Find("head").AppendHtml("<link href='/css/styles.min.css' rel='stylesheet' type='text/css'/>")
+	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
 
 	htmlStr, err := doc.Html()
 	if err != nil {
