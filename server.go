@@ -93,20 +93,49 @@ func (WebOneMatcher) Match(node *html.Node) bool {
 
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
+	// fmt.Printf("checking node: %q\n", node.Data)
 
-	if !isWhitelistedNode(node) {
+	if !isWhitelistedNode(node) && node.Type == html.ElementNode {
 		// It's not a whitelisted tag. Delete it.
 		matches = append(matches, node)
 	}
 
+	if node.Type == html.TextNode {
+		if strings.TrimSpace(node.Data) == "" {
+			parent := node.Parent
+
+			if node.Parent != nil {
+				// fmt.Println("removing empty text node")
+				parent.RemoveChild(node)
+			}
+
+			node = parent
+
+		}
+
+	}
+
+	if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type == html.ElementNode {
+		// It's an empty element node. Delete it.
+
+		parent := node.Parent
+
+		if node.Parent != nil {
+			// fmt.Printf("removing empty node %q and going up to node: %q\n", node.Data, node.Parent.Data)
+			parent.RemoveChild(node)
+		}
+
+		node = parent
+
+		// matches = append(matches, removeEmptyParentRecursively(node))
+	}
+
 	switch node.Type {
 	case html.ElementNode:
-		if isEmptyNode(node) && !isWhitelistedEmptyNode(node) {
-			matches = append(matches, node)
-		}
 
 		// It is a whitelisted tag. Dig deeper.
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			// fmt.Printf("digging deeper: %q\n", c.Data)
 			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
 		}
 
@@ -120,17 +149,8 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 			}
 		}
 
-	case html.TextNode:
-		node.Data = strings.TrimSpace(node.Data)
-		if node.Data == "" {
-			// matches = append(matches, node)
-		} else {
-
-			return []*html.Node{}
-		}
-
 	case html.CommentNode:
-		fmt.Printf("Comment node found: %q\n", node.Data)
+		// fmt.Printf("Removing comment node: %q\n", node.Data)
 		matches = append(matches, node)
 	case html.DoctypeNode:
 		fmt.Printf("Doctype node found: %q\n", node.Data)
@@ -138,9 +158,10 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 		fmt.Printf("Error node found: %q\n", node.Data)
 	case html.DocumentNode:
 		fmt.Printf("Document node found: %q\n", node.Data)
-	default:
-		fmt.Printf("Unknown node found: %q\n", node.Data)
-		return []*html.Node{}
+		// default:
+		// 	fmt.Printf("Removing unknown node: %q\n", node.Data)
+		// 	// matches = append(matches, node)
+		// 	return []*html.Node{}
 
 	}
 
@@ -161,9 +182,14 @@ func isWhitelistedEmptyNode(node *html.Node) bool {
 	return whitelisted
 }
 
-func isEmptyNode(node *html.Node) bool {
-	return node.FirstChild == nil
-}
+// func removeEmptyNode(node *html.Node, matches []*html.Node) bool {
+//
+// 	if node.FirstChild == nil {
+// 		matches = append(matches, node)
+// 	}
+//
+// 	return true
+// }
 
 func isWhitelistedAttr(attr string) bool {
 	_, whitelisted := whitelistedAttrs[attr]
