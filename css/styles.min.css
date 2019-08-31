@@ -1,0 +1,29 @@
+body {
+    margin:20px auto;
+    max-width:45em;
+    line-height:1.6;
+    color:#444;
+    padding: 0 10px
+}
+   
+h1, h2, h3 {
+    line-height:1.2;
+    color: black;
+}
+
+a {
+    text-decoration: none;
+}
+
+
+input {
+    width: 100%;
+    padding: 0.5em;   
+    
+}
+
+button {
+    border: none;
+    padding: 10px;    
+}
+
