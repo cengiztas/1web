@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"github.com/unrolled/render"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -77,12 +80,34 @@ var whitelistedEmptyTags = map[atom.Atom]struct{}{
 
 var u *url.URL
 
+var view *render.Render
+
 func main() {
+	view = render.New(render.Options{
+		Layout: "layout",
+		Extensions: []string{".tmpl", ".html"},
+		IsDevelopment: true,
+		RequirePartials: true,
+	})
+
+	http.HandleFunc("/", landing)
 	http.HandleFunc("/search", purify)
-	http.Handle("/", http.FileServer(http.Dir(".")))
+
+	// File Server
+	workDir, _ := os.Getwd()
+	filesDir := filepath.Join(workDir, "/public")
+	fs := http.FileServer(http.Dir(filesDir))
+	http.Handle("/public/", http.StripPrefix("/public", fs))
 
 	fmt.Println("listening on localhost:8888 ..")
-	http.ListenAndServe(":8888", nil)
+	http.ListenAndServe("localhost:8888", nil)
+}
+
+/**
+ * Route Handlers
+ */
+func landing(w http.ResponseWriter, r *http.Request)  {
+	view.HTML(w, http.StatusOK, "index", nil)
 }
 
 type WebOneMatcher struct{}
