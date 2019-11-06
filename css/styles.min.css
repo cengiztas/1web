@@ -27,3 +27,23 @@ button {
     padding: 10px;    
 }
 
+/*
+ * Use .list-container with a <details> tag, containing <summary> and <ul> as children.
+ */
+.list-container summary {
+  background: #eee;
+  cursor: pointer;
+  padding: .5rem 1rem;
+}
+
+.list-container summary:hover {
+  background: #ddd;
+}
+
+.list-container summary::-webkit-details-marker {
+  opacity: .5;
+}
+
+.list-container ul {
+  margin-top: .5rem;
+}
