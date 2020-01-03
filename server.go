@@ -17,22 +17,22 @@ import (
 )
 
 var whitelistedTags = map[atom.Atom]struct{}{
-	atom.Html:       struct{}{},
-	atom.Head:       struct{}{},
-	atom.Title:      struct{}{},
-	atom.Body:       struct{}{},
-	atom.H1:         struct{}{},
-	atom.H2:         struct{}{},
-	atom.H3:         struct{}{},
-	atom.H4:         struct{}{},
-	atom.H5:         struct{}{},
-	atom.H6:         struct{}{},
-	atom.P:          struct{}{},
-	atom.Br:         struct{}{},
-	atom.Hr:         struct{}{},
-	atom.A:          struct{}{},
-	atom.Nav:        struct{}{},
-	atom.Meta:       struct{}{},
+	atom.Html:  struct{}{},
+	atom.Head:  struct{}{},
+	atom.Title: struct{}{},
+	atom.Body:  struct{}{},
+	atom.H1:    struct{}{},
+	atom.H2:    struct{}{},
+	atom.H3:    struct{}{},
+	atom.H4:    struct{}{},
+	atom.H5:    struct{}{},
+	atom.H6:    struct{}{},
+	atom.P:     struct{}{},
+	atom.Br:    struct{}{},
+	atom.Hr:    struct{}{},
+	atom.A:     struct{}{},
+	atom.Nav:   struct{}{},
+	//atom.Meta:       struct{}{},
 	atom.Div:        struct{}{},
 	atom.Span:       struct{}{},
 	atom.Header:     struct{}{},
@@ -100,6 +100,14 @@ func main() {
 	fs := http.FileServer(http.Dir(filesDir))
 	http.Handle("/public/", http.StripPrefix("/public", fs))
 
+	f, err := os.OpenFile("1web.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	defer f.Close()
+
+	log.SetOutput(f)
+
 	fmt.Println("listening on localhost:8888 ..")
 	http.ListenAndServe("localhost:8888", nil)
 }
@@ -119,76 +127,43 @@ func (WebOneMatcher) Match(node *html.Node) bool {
 
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
-	// fmt.Printf("checking node: %q\n", node.Data)
+	log.Printf("checking node: %q\n", node.Data)
 
-	if !isWhitelistedNode(node) && node.Type == html.ElementNode {
+	if node.Type == html.TextNode {
+		// log.Printf("TEXTNODE node found: %q\n", node.Data)
+		if strings.TrimSpace(node.Data) == "" {
+			// log.Printf("TEXTNODE is empty\n")
+			matches = append(matches, node)
+
+		}
+
+	} else if !isWhitelistedNode(node) {
+		// log.Printf("removing not whitelisted node %q:\n", node.Data)
 		// It's not a whitelisted tag. Delete it.
 		matches = append(matches, node)
 	}
 
-	if node.Type == html.TextNode {
-		if strings.TrimSpace(node.Data) == "" {
-			parent := node.Parent
-
-			if node.Parent != nil {
-				// fmt.Println("removing empty text node")
-				parent.RemoveChild(node)
-			}
-
-			node = parent
-
-		}
-
-	}
-
 	if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type == html.ElementNode {
 		// It's an empty element node. Delete it.
-
-		parent := node.Parent
-
-		if node.Parent != nil {
-			// fmt.Printf("removing empty node %q and going up to node: %q\n", node.Data, node.Parent.Data)
-			parent.RemoveChild(node)
-		}
-
-		node = parent
-
-		// matches = append(matches, removeEmptyParentRecursively(node))
+		log.Printf("empty node found: %q\n", node.Data)
+		matches = append(matches, node)
+		// matches = append(matches, WebOneMatcher{}.MatchAll(node.Parent)...)
 	}
 
-	switch node.Type {
-	case html.ElementNode:
+	// It is a whitelisted tag. Dig deeper.
+	for c := node.FirstChild; c != nil; c = c.NextSibling {
+		// log.Printf("digging deeper: %q\n", c.Data)
 
-		// It is a whitelisted tag. Dig deeper.
-		for c := node.FirstChild; c != nil; c = c.NextSibling {
-			// fmt.Printf("digging deeper: %q\n", c.Data)
-			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
+		matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
+	}
+
+	for i := 0; i < len(node.Attr); i++ {
+		if !isWhitelistedAttr(node.Attr[i].Key) {
+			last := len(node.Attr) - 1
+			node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
+			node.Attr = node.Attr[:last]   // then slice off the last attribute
+			i--
 		}
-
-		// TODO: It should be faster to delete all attributes at once if array does not contain whitelisted attribute.
-		for i := 0; i < len(node.Attr); i++ {
-			if !isWhitelistedAttr(node.Attr[i].Key) {
-				last := len(node.Attr) - 1
-				node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
-				node.Attr = node.Attr[:last]   // then slice off the last attribute
-				i--
-			}
-		}
-
-	case html.CommentNode:
-		// fmt.Printf("Removing comment node: %q\n", node.Data)
-		matches = append(matches, node)
-	case html.DoctypeNode:
-		log.Printf("Doctype node found: %q\n", node.Data)
-	case html.ErrorNode:
-		log.Printf("Error node found: %q\n", node.Data)
-	case html.DocumentNode:
-		log.Printf("Document node found: %q\n", node.Data)
-		// default:
-		// 	fmt.Printf("Removing unknown node: %q\n", node.Data)
-		// 	// matches = append(matches, node)
-		// 	return []*html.Node{}
-
 	}
 
 	return matches
@@ -207,15 +182,6 @@ func isWhitelistedEmptyNode(node *html.Node) bool {
 	_, whitelisted := whitelistedEmptyTags[node.DataAtom]
 	return whitelisted
 }
-
-// func removeEmptyNode(node *html.Node, matches []*html.Node) bool {
-//
-// 	if node.FirstChild == nil {
-// 		matches = append(matches, node)
-// 	}
-//
-// 	return true
-// }
 
 func isWhitelistedAttr(attr string) bool {
 	_, whitelisted := whitelistedAttrs[attr]
