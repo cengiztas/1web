@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/unrolled/render"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,9 +85,9 @@ var view *render.Render
 
 func main() {
 	view = render.New(render.Options{
-		Layout: "layout",
-		Extensions: []string{".tmpl", ".html"},
-		IsDevelopment: true,
+		Layout:          "layout",
+		Extensions:      []string{".tmpl", ".html"},
+		IsDevelopment:   true,
 		RequirePartials: true,
 	})
 
@@ -106,7 +107,7 @@ func main() {
 /**
  * Route Handlers
  */
-func landing(w http.ResponseWriter, r *http.Request)  {
+func landing(w http.ResponseWriter, r *http.Request) {
 	view.HTML(w, http.StatusOK, "index", nil)
 }
 
@@ -178,11 +179,11 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 		// fmt.Printf("Removing comment node: %q\n", node.Data)
 		matches = append(matches, node)
 	case html.DoctypeNode:
-		fmt.Printf("Doctype node found: %q\n", node.Data)
+		log.Printf("Doctype node found: %q\n", node.Data)
 	case html.ErrorNode:
-		fmt.Printf("Error node found: %q\n", node.Data)
+		log.Printf("Error node found: %q\n", node.Data)
 	case html.DocumentNode:
-		fmt.Printf("Document node found: %q\n", node.Data)
+		log.Printf("Document node found: %q\n", node.Data)
 		// default:
 		// 	fmt.Printf("Removing unknown node: %q\n", node.Data)
 		// 	// matches = append(matches, node)
@@ -260,8 +261,6 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		u.Scheme = "http"
 	}
 
-	// resp, err := client.Get(query)
-
 	client := &http.Client{}
 	client.Timeout = time.Second * 15
 
@@ -309,12 +308,17 @@ func purify(w http.ResponseWriter, r *http.Request) {
 
 	// })
 
-	// purify
+	// start timer
+	start := time.Now()
+
+	// remove all unwanted stuff
 	doc.FindMatcher(WebOneMatcher{}).Remove()
 
+	// modify all anchor tags
 	selection := doc.Find("a")
 	updateAHref(selection)
 
+	// extend head with url to css and set the viewport
 	doc.Find("head").AppendHtml("<link href='/css/styles.min.css' rel='stylesheet' type='text/css'/>")
 	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
 
@@ -324,6 +328,10 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(err.Error()))
 		return
 	}
+
+	// stop timer
+	elapsed := time.Since(start)
+	log.Printf("duration: %s\n", elapsed)
 
 	w.Write([]byte(htmlStr))
 }
