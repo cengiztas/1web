@@ -127,34 +127,53 @@ func (WebOneMatcher) Match(node *html.Node) bool {
 
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
-	log.Printf("checking node: %q\n", node.Data)
+	log.Printf("checking node	: %q\n", node.DataAtom)
 
-	if node.Type == html.TextNode {
-		// log.Printf("TEXTNODE node found: %q\n", node.Data)
-		if strings.TrimSpace(node.Data) == "" {
-			// log.Printf("TEXTNODE is empty\n")
-			matches = append(matches, node)
-
+	/*
+		if node.FirstChild != nil {
+			log.Printf("checking fc		: %q\n", node.FirstChild.DataAtom)
 		}
+		if node.NextSibling != nil {
+			log.Printf("checking ns		: %q\n", node.NextSibling.DataAtom)
+		}
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			// log.Printf("digging deeper: %q\n", c.Data)
+			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
+		}
+	*/
 
-	} else if !isWhitelistedNode(node) {
+	if !isWhitelistedNode(node) && node.Type != html.TextNode {
 		// log.Printf("removing not whitelisted node %q:\n", node.Data)
 		// It's not a whitelisted tag. Delete it.
 		matches = append(matches, node)
 	}
 
-	if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type == html.ElementNode {
-		// It's an empty element node. Delete it.
-		log.Printf("empty node found: %q\n", node.Data)
-		matches = append(matches, node)
-		// matches = append(matches, WebOneMatcher{}.MatchAll(node.Parent)...)
-	}
-
 	// It is a whitelisted tag. Dig deeper.
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
 		// log.Printf("digging deeper: %q\n", c.Data)
-
 		matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
+	}
+
+	if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" {
+		log.Printf("TEXTNODE is empty. Adding to match list.\n")
+		matches = append(matches, node)
+	}
+
+	if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type == html.ElementNode {
+		var reverseRemove func(n *html.Node)
+
+		reverseRemove = func(n *html.Node) {
+			p := n.Parent
+
+			if p != nil && n.NextSibling == nil {
+				p.RemoveChild(n)
+				log.Printf("empty node %q deleted\n", n.DataAtom)
+				reverseRemove(p)
+			}
+		}
+
+		reverseRemove(node)
+
 	}
 
 	for i := 0; i < len(node.Attr); i++ {
