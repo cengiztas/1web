@@ -126,6 +126,16 @@ func (WebOneMatcher) Match(node *html.Node) bool {
 	return false
 }
 
+// Brilliant example why Go sux (sometimes).
+func contains(nodes []*html.Node, node *html.Node) bool {
+	for _, n := range nodes {
+		if n == node {
+			return true
+		}
+	}
+	return false
+}
+
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
 	log.Printf("node	: %q\n", node.Data)
@@ -145,24 +155,47 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 		matches = append(matches, node)
 
 	} else {
+		childrenCount := 0
+		matchedChildrenCount := 0
 
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
-			log.Printf("next node	: %q\n", c.Data)
-			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
-			log.Printf("back from rec: %q\n", c.Data)
+			childrenCount++
 
-			if c.FirstChild == nil && !isWhitelistedEmptyNode(c) && c.Type != html.TextNode {
-				// It's an empty node. Delete it.
-				log.Printf("deleting empty node after rec: %q\n", c.Data)
-				// p := c.Parent
-				// p.RemoveChild(c)
-				// return matches
-				matches = append(matches, node)
-			} else {
-				log.Printf("child exists.\n")
+			if c.Type == html.TextNode && strings.TrimSpace(c.Data) != "" {
+				continue
+			}
+
+			log.Printf("next node	: %q\n", c.Data)
+
+			childMatches := WebOneMatcher{}.MatchAll(c)
+
+			// If the child will be deleted, increment matchedChildrenCount.
+			if contains(childMatches, c) {
+				matchedChildrenCount++
+			}
+
+			matches = append(matches, childMatches...)
+			log.Printf("back from rec: %q\n", c.Data)
+		}
+
+		// A node can be deleted, if all its children will be deleted and it's
+		// not a text node.
+		if childrenCount == matchedChildrenCount && !isWhitelistedEmptyNode(node) {
+			log.Println("--------> COUNT EQUAL")
+			matches = append(matches, node)
+		}
+
+		for i := 0; i < len(node.Attr); i++ {
+			if !isWhitelistedAttr(node.Attr[i].Key) {
+				last := len(node.Attr) - 1
+				node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
+				node.Attr = node.Attr[:last]   // then slice off the last attribute
+				i--
 			}
 		}
 	}
+
+
 
 	/*
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
