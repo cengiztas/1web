@@ -76,7 +76,8 @@ var whitelistedAttrs = map[string]struct{}{
 }
 
 var whitelistedEmptyTags = map[atom.Atom]struct{}{
-	atom.Td: struct{}{},
+	atom.Td:   struct{}{},
+	atom.Head: struct{}{},
 }
 
 var u *url.URL
@@ -127,63 +128,91 @@ func (WebOneMatcher) Match(node *html.Node) bool {
 
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
-	log.Printf("checking node	: %q\n", node.DataAtom)
+	log.Printf("node	: %q\n", node.Data)
+
+	// if !isWhitelistedNode(node) && strings.TrimSpace(node.Data) != "" {
+	if !isWhitelistedNode(node) && node.Type != html.TextNode {
+		// It's neither a whitelisted nor an empty text node. Delete it.
+		log.Printf("deleting empty or unallowed node: %q\n", node.Data)
+		matches = append(matches, node)
+	} else if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" {
+		log.Printf("deleting empty node: %q\n", node.Data)
+		matches = append(matches, node)
+
+	} else if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type != html.TextNode {
+		// It's an empty node. Delete it.
+		log.Printf("deleting empty node: %q\n", node.Data)
+		matches = append(matches, node)
+
+	} else {
+
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			log.Printf("next node	: %q\n", c.Data)
+			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
+			log.Printf("back from rec: %q\n", c.Data)
+
+			if c.FirstChild == nil && !isWhitelistedEmptyNode(c) && c.Type != html.TextNode {
+				// It's an empty node. Delete it.
+				log.Printf("deleting empty node after rec: %q\n", c.Data)
+				// p := c.Parent
+				// p.RemoveChild(c)
+				// return matches
+				matches = append(matches, node)
+			} else {
+				log.Printf("child exists.\n")
+			}
+		}
+	}
 
 	/*
-		if node.FirstChild != nil {
-			log.Printf("checking fc		: %q\n", node.FirstChild.DataAtom)
-		}
-		if node.NextSibling != nil {
-			log.Printf("checking ns		: %q\n", node.NextSibling.DataAtom)
-		}
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
 			// log.Printf("digging deeper: %q\n", c.Data)
 			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
 		}
-	*/
-
-	if !isWhitelistedNode(node) && node.Type != html.TextNode {
-		// log.Printf("removing not whitelisted node %q:\n", node.Data)
-		// It's not a whitelisted tag. Delete it.
-		matches = append(matches, node)
-	}
-
-	// It is a whitelisted tag. Dig deeper.
-	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		// log.Printf("digging deeper: %q\n", c.Data)
-		matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
-	}
-
-	if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" {
-		log.Printf("TEXTNODE is empty. Adding to match list.\n")
-		matches = append(matches, node)
-	}
-
-	if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type == html.ElementNode {
-		var reverseRemove func(n *html.Node)
-
-		reverseRemove = func(n *html.Node) {
-			p := n.Parent
-
-			if p != nil && n.NextSibling == nil {
-				p.RemoveChild(n)
-				log.Printf("empty node %q deleted\n", n.DataAtom)
-				reverseRemove(p)
+			if !isWhitelistedNode(node) && node.Type != html.TextNode {
+				// log.Printf("removing not whitelisted node %q:\n", node.Data)
+				// It's not a whitelisted tag. Delete it.
+				matches = append(matches, node)
 			}
-		}
 
-		reverseRemove(node)
+			// It is a whitelisted tag. Dig deeper.
+			for c := node.FirstChild; c != nil; c = c.NextSibling {
+				// log.Printf("digging deeper: %q\n", c.Data)
+				matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
+			}
 
-	}
+			if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" {
+				log.Printf("TEXTNODE is empty. Adding to match list.\n")
+				// matches = append(matches, node)
+				// TODO: clean up from bottom up
+			}
 
-	for i := 0; i < len(node.Attr); i++ {
-		if !isWhitelistedAttr(node.Attr[i].Key) {
-			last := len(node.Attr) - 1
-			node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
-			node.Attr = node.Attr[:last]   // then slice off the last attribute
-			i--
-		}
-	}
+			if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type == html.ElementNode {
+				var reverseRemove func(n *html.Node)
+
+				reverseRemove = func(n *html.Node) {
+					p := n.Parent
+
+					if p != nil && n.NextSibling == nil {
+						p.RemoveChild(n)
+						log.Printf("empty node %q deleted\n", n.DataAtom)
+						reverseRemove(p)
+					}
+				}
+
+				reverseRemove(node)
+
+			}
+
+			for i := 0; i < len(node.Attr); i++ {
+				if !isWhitelistedAttr(node.Attr[i].Key) {
+					last := len(node.Attr) - 1
+					node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
+					node.Attr = node.Attr[:last]   // then slice off the last attribute
+					i--
+				}
+			}
+	*/
 
 	return matches
 }
