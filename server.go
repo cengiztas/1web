@@ -174,8 +174,15 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 				matchedChildrenCount++
 			}
 
+			// s := goquery.Selection{Nodes: childMatches}
+
+			// if s.Contains(c) {
+			// 	matchedChildrenCount++
+			// }
+
 			matches = append(matches, childMatches...)
-			log.Printf("back from rec: %q\n", c.Data)
+			// log.Printf("children matched: %q\n", s)
+
 		}
 
 		// A node can be deleted, if all its children will be deleted and it's
@@ -194,58 +201,6 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 			}
 		}
 	}
-
-
-
-	/*
-		for c := node.FirstChild; c != nil; c = c.NextSibling {
-			// log.Printf("digging deeper: %q\n", c.Data)
-			matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
-		}
-			if !isWhitelistedNode(node) && node.Type != html.TextNode {
-				// log.Printf("removing not whitelisted node %q:\n", node.Data)
-				// It's not a whitelisted tag. Delete it.
-				matches = append(matches, node)
-			}
-
-			// It is a whitelisted tag. Dig deeper.
-			for c := node.FirstChild; c != nil; c = c.NextSibling {
-				// log.Printf("digging deeper: %q\n", c.Data)
-				matches = append(matches, WebOneMatcher{}.MatchAll(c)...)
-			}
-
-			if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" {
-				log.Printf("TEXTNODE is empty. Adding to match list.\n")
-				// matches = append(matches, node)
-				// TODO: clean up from bottom up
-			}
-
-			if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type == html.ElementNode {
-				var reverseRemove func(n *html.Node)
-
-				reverseRemove = func(n *html.Node) {
-					p := n.Parent
-
-					if p != nil && n.NextSibling == nil {
-						p.RemoveChild(n)
-						log.Printf("empty node %q deleted\n", n.DataAtom)
-						reverseRemove(p)
-					}
-				}
-
-				reverseRemove(node)
-
-			}
-
-			for i := 0; i < len(node.Attr); i++ {
-				if !isWhitelistedAttr(node.Attr[i].Key) {
-					last := len(node.Attr) - 1
-					node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
-					node.Attr = node.Attr[:last]   // then slice off the last attribute
-					i--
-				}
-			}
-	*/
 
 	return matches
 }
@@ -345,16 +300,6 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// doc.Find("*").Each(func(i int, node *goquery.Selection) {
-	// 	// fmt.Printf("node: %q\n", goquery.NodeName(node))
-	// 	if _, whitelisted := whitelistedTags[atom.Lookup([]byte(goquery.NodeName(node)))]; !whitelisted {
-	// 		node.Remove()
-	// 		// fmt.Printf("Removing node: %q\n", node.Text())
-	// 	} else {
-	// 	}
-
-	// })
-
 	// start timer
 	start := time.Now()
 
@@ -368,6 +313,9 @@ func purify(w http.ResponseWriter, r *http.Request) {
 	// extend head with url to css and set the viewport
 	doc.Find("head").AppendHtml("<link href='/css/styles.min.css' rel='stylesheet' type='text/css'/>")
 	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
+
+	// wrap all nav tags with details and summary tag to collapse all list elements
+	doc.Find("nav").WrapHtml("<details class='list-container'>").Parent().PrependHtml("<summary>Click to expand</summary>")
 
 	htmlStr, err := doc.Html()
 	if err != nil {
