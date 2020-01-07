@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/tdewolff/minify/v2"
+	mhtml "github.com/tdewolff/minify/v2/html"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
@@ -101,6 +103,7 @@ func main() {
 	fs := http.FileServer(http.Dir(filesDir))
 	http.Handle("/public/", http.StripPrefix("/public", fs))
 
+	// TODO: switch to level based logging e.g. with https://github.com/sirupsen/logrus
 	f, err := os.OpenFile("1web.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
@@ -300,6 +303,14 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO: https://github.com/tdewolff/minify
+	m := minify.New()
+	m.AddFunc("text/html", mhtml.Minify)
+
+	// htmlS, err := doc.Html()
+	// str := strings.TrimRight(htmlS, "\r\n")
+	// fmt.Printf("%s", str)
+
 	// start timer
 	start := time.Now()
 
@@ -308,10 +319,11 @@ func purify(w http.ResponseWriter, r *http.Request) {
 
 	// modify all anchor tags
 	selection := doc.Find("a")
+	// TODO: exlude mailto
 	updateAHref(selection)
 
 	// extend head with url to css and set the viewport
-	doc.Find("head").AppendHtml("<link href='public/main.css' rel='stylesheet' type='text/css'/>")
+	doc.Find("head").AppendHtml("<link href='/public/main.css' rel='stylesheet' type='text/css'/>")
 	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
 
 	// wrap all nav tags with details and summary tag to collapse all list elements
@@ -326,7 +338,7 @@ func purify(w http.ResponseWriter, r *http.Request) {
 
 	// stop timer
 	elapsed := time.Since(start)
-	log.Printf("duration: %s\n", elapsed)
+	log.Printf("purifiying finished after %s (excluding network communication)\n", elapsed)
 
 	w.Write([]byte(htmlStr))
 }
