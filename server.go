@@ -311,7 +311,7 @@ func purify(w http.ResponseWriter, r *http.Request) {
 	updateAHref(selection)
 
 	// extend head with url to css and set the viewport
-	doc.Find("head").AppendHtml("<link href='/css/styles.min.css' rel='stylesheet' type='text/css'/>")
+	doc.Find("head").AppendHtml("<link href='public/main.css' rel='stylesheet' type='text/css'/>")
 	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
 
 	// wrap all nav tags with details and summary tag to collapse all list elements

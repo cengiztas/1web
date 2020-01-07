@@ -46,3 +46,52 @@ a {
 .x-search:hover {
     border: 1px solid #ddd;
 }
+body {
+    margin:20px auto;
+    max-width:45em;
+    line-height:1.6;
+    color:#444;
+    padding: 0 10px
+}
+   
+h1, h2, h3 {
+    line-height:1.2;
+    color: black;
+}
+
+a {
+    text-decoration: none;
+}
+
+
+input {
+    width: 100%;
+    padding: 0.5em;   
+    
+}
+
+button {
+    border: none;
+    padding: 10px;    
+}
+
+/*
+ * Use .list-container with a <details> tag, containing <summary> and <ul> as children.
+ */
+.list-container summary {
+  background: #eee;
+  cursor: pointer;
+  padding: .5rem 1rem;
+}
+
+.list-container summary:hover {
+  background: #ddd;
+}
+
+.list-container summary::-webkit-details-marker {
+  opacity: .5;
+}
+
+.list-container ul {
+  margin-top: .5rem;
+}
