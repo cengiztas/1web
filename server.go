@@ -70,6 +70,10 @@ var whitelistedTags = map[atom.Atom]struct{}{
 	atom.U:          struct{}{},
 	atom.Main:       struct{}{},
 	atom.Link:       struct{}{},
+	atom.Form:       struct{}{},
+	atom.Input:      struct{}{},
+	atom.Textarea:   struct{}{},
+	atom.Label:      struct{}{},
 }
 
 var whitelistedAttrs = map[string]struct{}{
@@ -78,8 +82,17 @@ var whitelistedAttrs = map[string]struct{}{
 }
 
 var whitelistedEmptyTags = map[atom.Atom]struct{}{
-	atom.Td:   struct{}{},
-	atom.Head: struct{}{},
+	atom.Td:       struct{}{},
+	atom.Textarea: struct{}{},
+	atom.Input:    struct{}{},
+	atom.Form:     struct{}{},
+	//atom.Head: struct{}{},
+}
+
+var keepAllAttributes = map[atom.Atom]struct{}{
+	atom.Meta:  struct{}{},
+	atom.Form:  struct{}{},
+	atom.Input: struct{}{},
 }
 
 var u *url.URL
@@ -195,12 +208,14 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 			matches = append(matches, node)
 		}
 
-		for i := 0; i < len(node.Attr); i++ {
-			if !isWhitelistedAttr(node.Attr[i].Key) {
-				last := len(node.Attr) - 1
-				node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
-				node.Attr = node.Attr[:last]   // then slice off the last attribute
-				i--
+		if !isWhitelistedAttryNode(node) {
+			for i := 0; i < len(node.Attr); i++ {
+				if !isWhitelistedAttr(node.Attr[i].Key) {
+					last := len(node.Attr) - 1
+					node.Attr[i] = node.Attr[last] // overwrite the target with the last attribute
+					node.Attr = node.Attr[:last]   // then slice off the last attribute
+					i--
+				}
 			}
 		}
 	}
@@ -224,6 +239,11 @@ func isWhitelistedEmptyNode(node *html.Node) bool {
 
 func isWhitelistedAttr(attr string) bool {
 	_, whitelisted := whitelistedAttrs[attr]
+	return whitelisted
+}
+
+func isWhitelistedAttryNode(node *html.Node) bool {
+	_, whitelisted := keepAllAttributes[node.DataAtom]
 	return whitelisted
 }
 
@@ -252,6 +272,19 @@ func updateAHref(sel *goquery.Selection) *goquery.Selection {
 
 func purify(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("query")
+	action := r.FormValue("action")
+
+	fmt.Println("query:", query)
+	fmt.Println("action:", action)
+
+	for k, v := range r.Form {
+		fmt.Printf("key:%q\tval:%q\n", k, v)
+	}
+
+	if action != "" {
+		query = action
+		// fmt.Printf("QUERY: %q\n" + query)
+	}
 
 	var err error
 
@@ -328,6 +361,19 @@ func purify(w http.ResponseWriter, r *http.Request) {
 
 	// wrap all nav tags with details and summary tag to collapse all list elements
 	doc.Find("nav").WrapHtml("<details class='list-container'>").Parent().PrependHtml("<summary>Click to expand</summary>")
+
+	doc.Find("form").Each(func(index int, frm *goquery.Selection) {
+		action, _ := frm.Attr("action")
+		// frm.AppendHtml("<input type='hidden' name='anchor' value='" + action + "'>")
+
+		// frm.SetAttr("method", "post")
+		frm.SetAttr("action", ("?query=" + action))
+
+		// fmt.Printf("" + r.Host)
+		// fmt.Println(action)
+		// fmt.Println(frm)
+
+	})
 
 	htmlStr, err := doc.Html()
 	if err != nil {
