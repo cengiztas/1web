@@ -95,3 +95,6 @@ button {
 .list-container ul {
   margin-top: .5rem;
 }
+
+nav, nav ul li {display: inline-flex;}
+nav, nav ul li:not(:last-child) {margin-right: 10px;}

@@ -79,6 +79,7 @@ var whitelistedTags = map[atom.Atom]struct{}{
 var whitelistedAttrs = map[string]struct{}{
 	"href":    struct{}{},
 	"colspan": struct{}{},
+	"id":      struct{}{},
 }
 
 var whitelistedEmptyTags = map[atom.Atom]struct{}{
@@ -109,6 +110,8 @@ func main() {
 
 	http.HandleFunc("/", landing)
 	http.HandleFunc("/search", purify)
+	// TODO: form handler
+	http.HandleFunc("/forms", forms)
 
 	// File Server
 	workDir, _ := os.Getwd()
@@ -136,6 +139,126 @@ func landing(w http.ResponseWriter, r *http.Request) {
 	view.HTML(w, http.StatusOK, "index", nil)
 }
 
+/*
+   Forms handler for e.g. search engines
+*/
+func forms(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseForm()
+
+	if err != nil {
+		log.Fatalf("failed parsing form: %v", err)
+	}
+
+	f := r.Form
+
+	var q string
+
+	oa := r.FormValue("origin_action")
+	om := r.FormValue("origin_method")
+
+	if om == "GET" || om == "get" {
+
+		//q = oa + url.QueryEscape("?")
+		q = oa + "?"
+
+		for k, v := range f {
+			if k == "origin_action" || k == "origin_method" {
+				continue
+			} else {
+
+				q += k + "=" + strings.Join(v, "+") + "&"
+				log.Printf("key: %s\tval: %v\n", k, v)
+			}
+		}
+
+	}
+
+	log.Printf("q: %s\n", q)
+
+	client := &http.Client{}
+	client.Timeout = time.Second * 15
+
+	req, err := http.NewRequest("GET", q, nil)
+	if err != nil {
+		w.WriteHeader(500)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+
+	resp, err := client.Do(req)
+	fmt.Printf("Status %q\n", resp.Status)
+	if err != nil {
+		fmt.Println("StatusCode		:", resp.StatusCode)
+		fmt.Println("Redirect URL	:", resp.Header.Get("Location"))
+		w.WriteHeader(500)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		w.WriteHeader(500)
+		w.Write([]byte(fmt.Sprint(resp.Status)))
+		return
+	}
+
+	// Load the HTML document
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		w.WriteHeader(500)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	// TODO: https://github.com/tdewolff/minify
+	m := minify.New()
+	m.AddFunc("text/html", mhtml.Minify)
+
+	// start timer
+	start := time.Now()
+
+	// remove all unwanted stuff
+	doc.FindMatcher(WebOneMatcher{}).Remove()
+
+	// modify all anchor tags
+	selection := doc.Find("a")
+	// TODO: exlude mailto
+	updateAHref(selection)
+
+	// extend head with url to css and set the viewport
+	doc.Find("head").AppendHtml("<link href='/public/main.css' rel='stylesheet' type='text/css'/>")
+	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
+
+	// wrap all nav tags with details and summary tag to collapse all list elements
+	doc.Find("nav").WrapHtml("<details class='list-container'>").Parent().PrependHtml("<summary>Click to expand</summary>")
+
+	doc.Find("form").Each(func(index int, frm *goquery.Selection) {
+		action, _ := frm.Attr("action")
+		method, _ := frm.Attr("method")
+		frm.SetAttr("method", "post")
+		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_action' value='%s'>", action))
+		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_method' value='%s'>", method))
+		frm.SetAttr("action", "/forms")
+
+	})
+
+	htmlStr, err := doc.Html()
+	if err != nil {
+		w.WriteHeader(500)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	// stop timer
+	elapsed := time.Since(start)
+	log.Printf("purifiying finished after %s (excluding network communication)\n", elapsed)
+
+	w.Write([]byte(htmlStr))
+	// view.HTML(w, http.StatusOK, "index", nil)
+}
+
 type WebOneMatcher struct{}
 
 func (WebOneMatcher) Match(node *html.Node) bool {
@@ -154,20 +277,20 @@ func contains(nodes []*html.Node, node *html.Node) bool {
 
 func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 	var matches []*html.Node
-	log.Printf("node	: %q\n", node.Data)
+	// log.Printf("node	: %q\n", node.Data)
 
 	// if !isWhitelistedNode(node) && strings.TrimSpace(node.Data) != "" {
 	if !isWhitelistedNode(node) && node.Type != html.TextNode {
 		// It's neither a whitelisted nor an empty text node. Delete it.
-		log.Printf("deleting empty or unallowed node: %q\n", node.Data)
+		// log.Printf("deleting empty or unallowed node: %q\n", node.Data)
 		matches = append(matches, node)
 	} else if node.Type == html.TextNode && strings.TrimSpace(node.Data) == "" {
-		log.Printf("deleting empty node: %q\n", node.Data)
+		// log.Printf("deleting empty node: %q\n", node.Data)
 		matches = append(matches, node)
 
 	} else if node.FirstChild == nil && !isWhitelistedEmptyNode(node) && node.Type != html.TextNode {
 		// It's an empty node. Delete it.
-		log.Printf("deleting empty node: %q\n", node.Data)
+		// log.Printf("deleting empty node: %q\n", node.Data)
 		matches = append(matches, node)
 
 	} else {
@@ -181,7 +304,7 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 				continue
 			}
 
-			log.Printf("next node	: %q\n", c.Data)
+			// log.Printf("next node	: %q\n", c.Data)
 
 			childMatches := WebOneMatcher{}.MatchAll(c)
 
@@ -204,7 +327,7 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 		// A node can be deleted, if all its children will be deleted and it's
 		// not a text node.
 		if childrenCount == matchedChildrenCount && !isWhitelistedEmptyNode(node) {
-			log.Println("--------> COUNT EQUAL")
+			// log.Println("--------> COUNT EQUAL")
 			matches = append(matches, node)
 		}
 
@@ -263,7 +386,7 @@ func updateAHref(sel *goquery.Selection) *goquery.Selection {
 			panic(err)
 		}
 
-		item.SetAttr("href", ("?query=" + base.ResolveReference(href).String()))
+		item.SetAttr("href", ("/search?query=" + url.QueryEscape(base.ResolveReference(href).String())))
 	})
 
 	return sel
@@ -272,19 +395,6 @@ func updateAHref(sel *goquery.Selection) *goquery.Selection {
 
 func purify(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("query")
-	action := r.FormValue("action")
-
-	fmt.Println("query:", query)
-	fmt.Println("action:", action)
-
-	for k, v := range r.Form {
-		fmt.Printf("key:%q\tval:%q\n", k, v)
-	}
-
-	if action != "" {
-		query = action
-		// fmt.Printf("QUERY: %q\n" + query)
-	}
 
 	var err error
 
@@ -360,18 +470,17 @@ func purify(w http.ResponseWriter, r *http.Request) {
 	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
 
 	// wrap all nav tags with details and summary tag to collapse all list elements
-	doc.Find("nav").WrapHtml("<details class='list-container'>").Parent().PrependHtml("<summary>Click to expand</summary>")
+	// "*:not(nav) > ul" css selector: all ul tags without a nav parent
+	doc.Find("*:not(nav) > ul").WrapHtml("<details class='list-container'>").Parent().PrependHtml("<summary>Click to expand</summary>")
 
 	doc.Find("form").Each(func(index int, frm *goquery.Selection) {
 		action, _ := frm.Attr("action")
-		// frm.AppendHtml("<input type='hidden' name='anchor' value='" + action + "'>")
+		method, _ := frm.Attr("method")
 
-		// frm.SetAttr("method", "post")
-		frm.SetAttr("action", ("?query=" + action))
-
-		// fmt.Printf("" + r.Host)
-		// fmt.Println(action)
-		// fmt.Println(frm)
+		frm.SetAttr("method", "post")
+		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_action' value='%s'>", action))
+		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_method' value='%s'>", method))
+		frm.SetAttr("action", "/forms")
 
 	})
 
