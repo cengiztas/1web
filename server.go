@@ -156,6 +156,13 @@ func forms(w http.ResponseWriter, r *http.Request) {
 	oa := r.FormValue("origin_action")
 	om := r.FormValue("origin_method")
 
+	//TODO: Double-Check URL. If relative extend to absolute.
+	url, err := url.ParseRequestURI(oa)
+	if err == nil {
+		fmt.Printf("url parse error: %s\n", err)
+		fmt.Printf("new url : %s\n", u.ResolveReference(url))
+	}
+
 	if om == "GET" || om == "get" {
 
 		//q = oa + url.QueryEscape("?")
@@ -398,6 +405,7 @@ func purify(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 
+	//u, err = url.ParseRequestURI(query)
 	u, err = url.Parse(query)
 	if err != nil {
 		panic(err)
