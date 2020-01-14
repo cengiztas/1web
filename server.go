@@ -110,7 +110,7 @@ func main() {
 
 	http.HandleFunc("/", landing)
 	http.HandleFunc("/search", purify)
-	// TODO: form handler
+	// TODO: DONE! form handler
 	http.HandleFunc("/forms", forms)
 
 	// File Server
@@ -153,23 +153,30 @@ func forms(w http.ResponseWriter, r *http.Request) {
 
 	var q string
 
-	oa := r.FormValue("origin_action")
+	oa, _ := url.Parse(r.FormValue("origin_action"))
+
 	om := r.FormValue("origin_method")
 
-	//TODO: Double-Check URL. If relative extend to absolute.
-	url, err := url.ParseRequestURI(oa)
-	if err == nil {
-		fmt.Printf("url parse error: %s\n", err)
-		fmt.Printf("new url : %s\n", u.ResolveReference(url))
+	if om == "" {
+		om = "GET"
 	}
+
+	ou, _ := url.Parse(r.FormValue("origin_url"))
+
+	fmt.Printf("action: %s\n", oa)
+	fmt.Printf("base url: %s\n", ou)
+
+	// TODO: DONE! Double-Check URL. If relative extend to absolute.
+	oa = ou.ResolveReference(oa)
+	fmt.Printf("new url : %s\n", oa)
 
 	if om == "GET" || om == "get" {
 
 		//q = oa + url.QueryEscape("?")
-		q = oa + "?"
+		q = oa.String() + "?"
 
 		for k, v := range f {
-			if k == "origin_action" || k == "origin_method" {
+			if k == "origin_action" || k == "origin_method" || k == "origin_url" {
 				continue
 			} else {
 
@@ -179,6 +186,8 @@ func forms(w http.ResponseWriter, r *http.Request) {
 		}
 
 	}
+
+	// TODO: Handle post method
 
 	log.Printf("q: %s\n", q)
 
@@ -244,9 +253,10 @@ func forms(w http.ResponseWriter, r *http.Request) {
 	doc.Find("form").Each(func(index int, frm *goquery.Selection) {
 		action, _ := frm.Attr("action")
 		method, _ := frm.Attr("method")
-		frm.SetAttr("method", "post")
+		// frm.SetAttr("method", "post")
 		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_action' value='%s'>", action))
 		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_method' value='%s'>", method))
+		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_url' value='%s'>", u.String()))
 		frm.SetAttr("action", "/forms")
 
 	})
@@ -427,6 +437,8 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("base url: %s\n", u.String())
+
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
 
@@ -485,9 +497,10 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		action, _ := frm.Attr("action")
 		method, _ := frm.Attr("method")
 
-		frm.SetAttr("method", "post")
+		// frm.SetAttr("method", "post")
 		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_action' value='%s'>", action))
 		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_method' value='%s'>", method))
+		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_url' value='%s'>", u.String()))
 		frm.SetAttr("action", "/forms")
 
 	})
