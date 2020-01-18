@@ -170,6 +170,8 @@ func forms(w http.ResponseWriter, r *http.Request) {
 	oa = ou.ResolveReference(oa)
 	fmt.Printf("new url : %s\n", oa)
 
+	var s string
+
 	if om == "GET" || om == "get" {
 
 		//q = oa + url.QueryEscape("?")
@@ -180,12 +182,16 @@ func forms(w http.ResponseWriter, r *http.Request) {
 				continue
 			} else {
 
-				q += k + "=" + strings.Join(v, "+") + "&"
+				s += k + "=" + url.QueryEscape(v[0]) + "&"
+				//s += k + "=" + strings.Join(v, "-") // + "&"
 				log.Printf("key: %s\tval: %v\n", k, v)
 			}
 		}
 
 	}
+
+	q += strings.TrimSuffix(s, "&")
+	//q += url.QueryEscape(s)
 
 	// TODO: Handle post method
 
