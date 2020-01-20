@@ -443,6 +443,14 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forward the requesting browsers "Accept-Language" header or fallback to
+	// English.
+	if r.Header.Get("Accept-Language") != "" {
+		req.Header.Set("Accept-Language", r.Header.Get("Accept-Language"))
+	} else {
+		req.Header.Add("Accept-Language", "en-GB,en;q=0.5")
+	}
+
 	log.Printf("base url: %s\n", u.String())
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14")
