@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/tdewolff/minify/v2"
-	mhtml "github.com/tdewolff/minify/v2/html"
+	//"github.com/tdewolff/minify/v2"
+	//mhtml "github.com/tdewolff/minify/v2/html"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
@@ -109,7 +109,7 @@ func main() {
 	})
 
 	http.HandleFunc("/", landing)
-	http.HandleFunc("/search", purify)
+	http.HandleFunc("/search", sanitize)
 	// TODO: DONE! form handler
 	http.HandleFunc("/forms", forms)
 
@@ -163,18 +163,11 @@ func forms(w http.ResponseWriter, r *http.Request) {
 
 	ou, _ := url.Parse(r.FormValue("origin_url"))
 
-	fmt.Printf("action: %s\n", oa)
-	fmt.Printf("base url: %s\n", ou)
-
-	// TODO: DONE! Double-Check URL. If relative extend to absolute.
 	oa = ou.ResolveReference(oa)
-	fmt.Printf("new url : %s\n", oa)
 
 	var s string
 
 	if om == "GET" || om == "get" {
-
-		//q = oa + url.QueryEscape("?")
 		q = oa.String() + "?"
 
 		for k, v := range f {
@@ -183,103 +176,18 @@ func forms(w http.ResponseWriter, r *http.Request) {
 			} else {
 
 				s += k + "=" + url.QueryEscape(v[0]) + "&"
-				//s += k + "=" + strings.Join(v, "-") // + "&"
 				log.Printf("key: %s\tval: %v\n", k, v)
 			}
 		}
-
 	}
 
 	q += strings.TrimSuffix(s, "&")
-	//q += url.QueryEscape(s)
 
 	// TODO: Handle post method
 
 	log.Printf("q: %s\n", q)
 
-	client := &http.Client{}
-	client.Timeout = time.Second * 15
-
-	req, err := http.NewRequest("GET", q, nil)
-	if err != nil {
-		w.WriteHeader(500)
-		w.Write([]byte(err.Error()))
-		return
-	}
-
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-
-	resp, err := client.Do(req)
-	fmt.Printf("Status %q\n", resp.Status)
-	if err != nil {
-		fmt.Println("StatusCode		:", resp.StatusCode)
-		fmt.Println("Redirect URL	:", resp.Header.Get("Location"))
-		w.WriteHeader(500)
-		w.Write([]byte(err.Error()))
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		w.WriteHeader(500)
-		w.Write([]byte(fmt.Sprint(resp.Status)))
-		return
-	}
-
-	// Load the HTML document
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		w.WriteHeader(500)
-		w.Write([]byte(err.Error()))
-		return
-	}
-
-	// TODO: https://github.com/tdewolff/minify
-	m := minify.New()
-	m.AddFunc("text/html", mhtml.Minify)
-
-	// start timer
-	start := time.Now()
-
-	// remove all unwanted stuff
-	doc.FindMatcher(WebOneMatcher{}).Remove()
-
-	// modify all anchor tags
-	selection := doc.Find("a")
-	// TODO: exlude mailto
-	updateAHref(selection)
-
-	// extend head with url to css and set the viewport
-	doc.Find("head").AppendHtml("<link href='/public/main.css' rel='stylesheet' type='text/css'/>")
-	doc.Find("head").AppendHtml("<meta name='viewport' content='&#39;width=device-width, initial-scale=1.0&#39;' initial-scale='1.0'/>")
-
-	// wrap all nav tags with details and summary tag to collapse all list elements
-	doc.Find("nav").WrapHtml("<details class='list-container'>").Parent().PrependHtml("<summary>Click to expand</summary>")
-
-	doc.Find("form").Each(func(index int, frm *goquery.Selection) {
-		action, _ := frm.Attr("action")
-		method, _ := frm.Attr("method")
-		// frm.SetAttr("method", "post")
-		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_action' value='%s'>", action))
-		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_method' value='%s'>", method))
-		frm.AppendHtml(fmt.Sprintf("<input type='hidden' name='origin_url' value='%s'>", u.String()))
-		frm.SetAttr("action", "/forms")
-
-	})
-
-	htmlStr, err := doc.Html()
-	if err != nil {
-		w.WriteHeader(500)
-		w.Write([]byte(err.Error()))
-		return
-	}
-
-	// stop timer
-	elapsed := time.Since(start)
-	log.Printf("purifiying finished after %s (excluding network communication)\n", elapsed)
-
-	w.Write([]byte(htmlStr))
-	// view.HTML(w, http.StatusOK, "index", nil)
+	request(w, r, q)
 }
 
 type WebOneMatcher struct{}
@@ -336,21 +244,13 @@ func (WebOneMatcher) MatchAll(node *html.Node) []*html.Node {
 				matchedChildrenCount++
 			}
 
-			// s := goquery.Selection{Nodes: childMatches}
-
-			// if s.Contains(c) {
-			// 	matchedChildrenCount++
-			// }
-
 			matches = append(matches, childMatches...)
-			// log.Printf("children matched: %q\n", s)
 
 		}
 
 		// A node can be deleted, if all its children will be deleted and it's
 		// not a text node.
 		if childrenCount == matchedChildrenCount && !isWhitelistedEmptyNode(node) {
-			// log.Println("--------> COUNT EQUAL")
 			matches = append(matches, node)
 		}
 
@@ -416,7 +316,7 @@ func updateAHref(sel *goquery.Selection) *goquery.Selection {
 
 }
 
-func purify(w http.ResponseWriter, r *http.Request) {
+func sanitize(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("query")
 
 	var err error
@@ -433,10 +333,15 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		u.Scheme = "http"
 	}
 
+	request(w, r, u.String())
+}
+
+func request(w http.ResponseWriter, r *http.Request, q string) {
+
 	client := &http.Client{}
 	client.Timeout = time.Second * 15
 
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequest("GET", q, nil)
 	if err != nil {
 		w.WriteHeader(500)
 		w.Write([]byte(err.Error()))
@@ -451,13 +356,11 @@ func purify(w http.ResponseWriter, r *http.Request) {
 		req.Header.Add("Accept-Language", "en-GB,en;q=0.5")
 	}
 
-	log.Printf("base url: %s\n", u.String())
-
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
 
 	resp, err := client.Do(req)
-	fmt.Printf("Status %q\n", resp.Status)
+	// fmt.Printf("Status %q\n", resp.Status)
 	if err != nil {
 		fmt.Println("StatusCode		:", resp.StatusCode)
 		fmt.Println("Redirect URL	:", resp.Header.Get("Location"))
@@ -481,8 +384,8 @@ func purify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: https://github.com/tdewolff/minify
-	m := minify.New()
-	m.AddFunc("text/html", mhtml.Minify)
+	// m := minify.New()
+	// m.AddFunc("text/html", mhtml.Minify)
 
 	// htmlS, err := doc.Html()
 	// str := strings.TrimRight(htmlS, "\r\n")
@@ -528,7 +431,7 @@ func purify(w http.ResponseWriter, r *http.Request) {
 
 	// stop timer
 	elapsed := time.Since(start)
-	log.Printf("purifiying finished after %s (excluding network communication)\n", elapsed)
+	log.Printf("sanitizing finished after %s (excluding network communication)\n", elapsed)
 
 	w.Write([]byte(htmlStr))
 }
